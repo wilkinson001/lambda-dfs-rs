@@ -65,28 +65,43 @@ fn get_namespace_and_table(message: &SqsMessage) -> (String, String) {
     (namespace, String::from(parts[1]))
 }
 
-async fn maybe_pull_s3_data(event: Value, client: &Client, bucket_name: &String) -> Value {
+async fn maybe_pull_s3_data(mut event: Value, client: &Client, bucket_name: &String) -> Value {
     let s3_path: Value = event["data"]["detail"]["extended"]["s3"].to_owned();
     if s3_path != json!(null) {
         let key = s3_path.as_str().unwrap();
-        let s3_data = download_object(client, bucket_name, key).await;
+        let s3_data: Vec<u8> = download_object(client, bucket_name, key).await;
+        //Merge S3 data with event
+        if let Some(extended_map) = event
+            .get_mut("data")
+            .and_then(|d| d.get_mut("detail"))
+            .and_then(|d| d.get_mut("extended"))
+            .and_then(|x| x.as_object_mut())
+        {
+            let additions: Value =
+                serde_json::from_str(std::str::from_utf8(&s3_data).unwrap()).unwrap();
+            if let Some(add_obj) = additions.as_object() {
+                for (k, v) in add_obj {
+                    if k == "s3" {
+                        continue;
+                    } // preserve existing s3
+                    extended_map.insert(k.clone(), v.clone()); // clone from additions
+                }
+            }
+        }
     }
-    //Merge S3 data with event
     return event;
 }
 
-async fn download_object(
-    client: &aws_sdk_s3::Client,
-    bucket_name: &str,
-    key: &str,
-) -> GetObjectOutput {
-    client
+async fn download_object<'a>(client: &aws_sdk_s3::Client, bucket_name: &str, key: &str) -> Vec<u8> {
+    let stream: GetObjectOutput = client
         .get_object()
         .bucket(bucket_name)
         .key(key)
         .send()
         .await
-        .unwrap()
+        .unwrap();
+    let data = stream.body.collect().await.unwrap();
+    data.to_vec()
 }
 fn construct_s3_path(table_key: &(String, String), insert_timestamp: DateTime<Utc>) -> String {
     format!(
