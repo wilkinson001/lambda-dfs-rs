@@ -9,7 +9,7 @@ use aws_sdk_s3::operation::get_object::GetObjectOutput;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::Error;
 use aws_sdk_s3::Client;
-use chrono::Utc;
+use chrono::{DateTime, Datelike, Timelike, Utc};
 use lambda_runtime::{tracing, LambdaEvent};
 use parquet::arrow::ArrowWriter;
 use serde_json::{json, Value};
@@ -22,7 +22,8 @@ pub(crate) async fn function_handler(event: LambdaEvent<SqsEvent>) -> Result<(),
     let payload = event.payload;
     tracing::info!("Payload: {:?}", payload);
     let mut event_map: HashMap<(String, String), Vec<Value>> = HashMap::new();
-    let bucket_name: String = env::var("EXTENDED_DATA_BUCKET_NAME").unwrap();
+    let extended_bucket_name: String = env::var("EXTENDED_DATA_BUCKET_NAME").unwrap();
+    let bucket_name: String = env::var("OUTPUT_DATA_BUCKET_NAME").unwrap();
 
     let region_provider: RegionProviderChain =
         RegionProviderChain::default_provider().or_else("us-east-1");
@@ -33,13 +34,22 @@ pub(crate) async fn function_handler(event: LambdaEvent<SqsEvent>) -> Result<(),
         let body: String = event.body.to_owned().unwrap();
         let parsed_event: Value = serde_json::from_str(&body[..]).unwrap();
         let key: (String, String) = get_namespace_and_table(event);
-        let enriched_event: Value = maybe_pull_s3_data(parsed_event, &client, &bucket_name).await;
+        let enriched_event: Value =
+            maybe_pull_s3_data(parsed_event, &client, &extended_bucket_name).await;
         event_map.entry(key).or_insert(vec![]).push(enriched_event)
     }
 
     for (key, value) in event_map.iter() {
-        let s3_path: String = construct_s3_path(key);
-        write_to_s3(value, s3_path, &client).await
+        let insert_timestamp: DateTime<Utc> = Utc::now();
+        let s3_path: String = construct_s3_path(key, insert_timestamp);
+        write_to_s3(
+            value,
+            s3_path,
+            &client,
+            &bucket_name,
+            insert_timestamp.timestamp_nanos_opt().unwrap(),
+        )
+        .await
     }
 
     Ok(())
@@ -78,9 +88,26 @@ async fn download_object(
         .await
         .unwrap()
 }
-fn construct_s3_path(table_key: &(String, String)) -> String {}
+fn construct_s3_path(table_key: &(String, String), insert_timestamp: DateTime<Utc>) -> String {
+    format!(
+        "/raw/{}/{}/year={}/month={}/day={}/hour={}/minute={}/",
+        table_key.0,
+        table_key.1,
+        insert_timestamp.year(),
+        insert_timestamp.month(),
+        insert_timestamp.day(),
+        insert_timestamp.hour(),
+        insert_timestamp.minute()
+    )
+}
 
-async fn write_to_s3(data: &Vec<Value>, path: String, client: &aws_sdk_s3::Client) {
+async fn write_to_s3(
+    data: &Vec<Value>,
+    path: String,
+    client: &aws_sdk_s3::Client,
+    bucket: &str,
+    insert_timestamp: i64,
+) {
     let json_strings: Vec<String> = data
         .into_iter()
         .map(|v| v.to_string()) // serialize to JSON text
@@ -89,12 +116,11 @@ async fn write_to_s3(data: &Vec<Value>, path: String, client: &aws_sdk_s3::Clien
     // Create Arrow array for the `data` column
     let data_array: Arc<StringArray> = Arc::new(StringArray::from(json_strings)) as _;
 
-    // Current UTC timestamp in nanoseconds
-    let now = Utc::now().timestamp_nanos_opt().unwrap();
-
     // Create a timestamp array (same timestamp for all rows here)
-    let ts_array: Arc<TimestampNanosecondArray> =
-        Arc::new(TimestampNanosecondArray::from(vec![now; data.len()])) as _;
+    let ts_array: Arc<TimestampNanosecondArray> = Arc::new(TimestampNanosecondArray::from(vec![
+            insert_timestamp;
+            data.len()
+        ])) as _;
 
     // Define schema: "data" as Utf8, "insert_timestamp" as Timestamp(Nanosecond, Some("UTC"))
     let schema = Arc::new(Schema::new(vec![
@@ -115,7 +141,7 @@ async fn write_to_s3(data: &Vec<Value>, path: String, client: &aws_sdk_s3::Clien
 
     client
         .put_object()
-        .bucket("my-bucket")
+        .bucket(bucket)
         .key(path)
         .body(ByteStream::from(buffer))
         .send()
