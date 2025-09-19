@@ -1,14 +1,16 @@
 [package]
-name = "iceberg-lambda-rs"
+name = "lambda-dfs-rs"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-arrow = "56.1.0"
-arrow-schema = "56.1.0"
-aws-config = "1.8.6"
 aws-sdk-s3 = "1.106.0"
-aws_lambda_events = { version = "0.15.1", default-features = false, features = ["sqs"] }
+arrow = "56.1.0"
+aws-config = { version = "1.8.6", features = ["behavior-version-latest"] }
+arrow-schema = "56.1.0"
+aws_lambda_events = { version = "0.15.1", default-features = false, features = [
+  "sqs",
+] }
 chrono = "0.4.42"
 iceberg = "0.6.0"
 iceberg-catalog-rest = "0.6.0"

@@ -2354,24 +2354,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "iceberg-lambda-rs"
-version = "0.1.0"
-dependencies = [
- "arrow",
- "arrow-schema 56.1.0",
- "aws-config",
- "aws-sdk-s3",
- "aws_lambda_events",
- "chrono",
- "iceberg",
- "iceberg-catalog-rest",
- "lambda_runtime",
- "parquet 56.1.0",
- "serde_json",
- "tokio",
-]
-
-[[package]]
 name = "icu_collections"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2572,6 +2554,24 @@ checksum = "0c0b063578492ceec17683ef2f8c5e89121fbd0b172cbc280635ab7567db2738"
 dependencies = [
  "once_cell",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "lambda-dfs-rs"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "arrow-schema 56.1.0",
+ "aws-config",
+ "aws-sdk-s3",
+ "aws_lambda_events",
+ "chrono",
+ "iceberg",
+ "iceberg-catalog-rest",
+ "lambda_runtime",
+ "parquet 56.1.0",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

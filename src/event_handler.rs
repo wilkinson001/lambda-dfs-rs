@@ -3,11 +3,11 @@ use arrow_schema::{DataType, Field, Schema};
 use aws_config::SdkConfig;
 use aws_lambda_events::event::sqs::SqsEvent;
 use aws_lambda_events::sqs::SqsMessage;
+use lambda_runtime::Error;
 
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::operation::get_object::GetObjectOutput;
 use aws_sdk_s3::primitives::ByteStream;
-use aws_sdk_s3::types::Error;
 use aws_sdk_s3::Client;
 use chrono::{DateTime, Datelike, Timelike, Utc};
 use lambda_runtime::{tracing, LambdaEvent};
@@ -154,7 +154,7 @@ async fn write_to_s3(
     writer.write(&batch).unwrap();
     writer.close().unwrap();
 
-    client
+    let _ = client
         .put_object()
         .bucket(bucket)
         .key(path)
@@ -162,9 +162,3 @@ async fn write_to_s3(
         .send()
         .await;
 }
-// 2. Iterate events
-//      a. Calculate Namespace and table
-//      b. Pull S3 data
-//      c. Add to namespace+table list
-// 3. Iterate namespace+table
-//      a. Write to Parquet S3 file
