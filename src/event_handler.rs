@@ -35,7 +35,7 @@ pub(crate) async fn function_handler(event: LambdaEvent<SqsEvent>) -> Result<(),
         let parsed_event: Value = serde_json::from_str(&body[..]).unwrap();
         let key: (String, String) = get_namespace_and_table(event);
         let enriched_event: Value =
-            maybe_pull_s3_data(parsed_event, &client, &extended_bucket_name).await;
+            maybe_pull_s3_data(parsed_event, &client, extended_bucket_name.to_owned()).await;
         event_map.entry(key).or_insert(vec![]).push(enriched_event)
     }
 
@@ -43,7 +43,7 @@ pub(crate) async fn function_handler(event: LambdaEvent<SqsEvent>) -> Result<(),
         let insert_timestamp: DateTime<Utc> = Utc::now();
         let s3_path: String = construct_s3_path(key, insert_timestamp);
         write_to_s3(
-            value,
+            value.to_owned(),
             s3_path,
             &client,
             &bucket_name,
@@ -65,11 +65,11 @@ fn get_namespace_and_table(message: &SqsMessage) -> (String, String) {
     (namespace, String::from(parts[1]))
 }
 
-async fn maybe_pull_s3_data(mut event: Value, client: &Client, bucket_name: &String) -> Value {
+async fn maybe_pull_s3_data(mut event: Value, client: &Client, bucket_name: String) -> Value {
     let s3_path: Value = event["data"]["detail"]["extended"]["s3"].to_owned();
     if s3_path != json!(null) {
         let key = s3_path.as_str().unwrap();
-        let s3_data: Vec<u8> = download_object(client, bucket_name, key).await;
+        let s3_data: Vec<u8> = download_object(client, bucket_name.as_str(), key).await;
         //Merge S3 data with event
         if let Some(extended_map) = event
             .get_mut("data")
@@ -89,10 +89,10 @@ async fn maybe_pull_s3_data(mut event: Value, client: &Client, bucket_name: &Str
             }
         }
     }
-    return event;
+    event
 }
 
-async fn download_object<'a>(client: &aws_sdk_s3::Client, bucket_name: &str, key: &str) -> Vec<u8> {
+async fn download_object(client: &aws_sdk_s3::Client, bucket_name: &str, key: &str) -> Vec<u8> {
     let stream: GetObjectOutput = client
         .get_object()
         .bucket(bucket_name)
@@ -117,14 +117,14 @@ fn construct_s3_path(table_key: &(String, String), insert_timestamp: DateTime<Ut
 }
 
 async fn write_to_s3(
-    data: &Vec<Value>,
+    data: Vec<Value>,
     path: String,
     client: &aws_sdk_s3::Client,
     bucket: &str,
     insert_timestamp: i64,
 ) {
     let json_strings: Vec<String> = data
-        .into_iter()
+        .iter()
         .map(|v| v.to_string()) // serialize to JSON text
         .collect();
 
