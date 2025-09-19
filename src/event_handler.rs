@@ -1,15 +1,21 @@
+use arrow::array::{RecordBatch, StringArray, TimestampNanosecondArray};
+use arrow_schema::{DataType, Field, Schema};
 use aws_config::SdkConfig;
 use aws_lambda_events::event::sqs::SqsEvent;
 use aws_lambda_events::sqs::SqsMessage;
 
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::operation::get_object::GetObjectOutput;
+use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::Error;
 use aws_sdk_s3::Client;
+use chrono::Utc;
 use lambda_runtime::{tracing, LambdaEvent};
+use parquet::arrow::ArrowWriter;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::env;
+use std::sync::Arc;
 
 pub(crate) async fn function_handler(event: LambdaEvent<SqsEvent>) -> Result<(), Error> {
     // Extract some useful information from the request
@@ -33,7 +39,7 @@ pub(crate) async fn function_handler(event: LambdaEvent<SqsEvent>) -> Result<(),
 
     for (key, value) in event_map.iter() {
         let s3_path: String = construct_s3_path(key);
-        write_to_s3(value, s3_path)
+        write_to_s3(value, s3_path, &client).await
     }
 
     Ok(())
@@ -74,7 +80,47 @@ async fn download_object(
 }
 fn construct_s3_path(table_key: &(String, String)) -> String {}
 
-fn write_to_s3(data: &Vec<Value>, path: String) {}
+async fn write_to_s3(data: &Vec<Value>, path: String, client: &aws_sdk_s3::Client) {
+    let json_strings: Vec<String> = data
+        .into_iter()
+        .map(|v| v.to_string()) // serialize to JSON text
+        .collect();
+
+    // Create Arrow array for the `data` column
+    let data_array: Arc<StringArray> = Arc::new(StringArray::from(json_strings)) as _;
+
+    // Current UTC timestamp in nanoseconds
+    let now = Utc::now().timestamp_nanos_opt().unwrap();
+
+    // Create a timestamp array (same timestamp for all rows here)
+    let ts_array: Arc<TimestampNanosecondArray> =
+        Arc::new(TimestampNanosecondArray::from(vec![now; data.len()])) as _;
+
+    // Define schema: "data" as Utf8, "insert_timestamp" as Timestamp(Nanosecond, Some("UTC"))
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("data", DataType::Utf8, false),
+        Field::new(
+            "insert_timestamp",
+            DataType::Timestamp(arrow_schema::TimeUnit::Nanosecond, Some("UTC".into())),
+            false,
+        ),
+    ]));
+
+    // Build RecordBatch
+    let mut buffer = Vec::new();
+    let batch = RecordBatch::try_new(schema.to_owned(), vec![data_array, ts_array]).unwrap();
+    let mut writer = ArrowWriter::try_new(&mut buffer, schema, None).unwrap();
+    writer.write(&batch).unwrap();
+    writer.close().unwrap();
+
+    client
+        .put_object()
+        .bucket("my-bucket")
+        .key(path)
+        .body(ByteStream::from(buffer))
+        .send()
+        .await;
+}
 // 2. Iterate events
 //      a. Calculate Namespace and table
 //      b. Pull S3 data
