@@ -9,7 +9,7 @@ use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::operation::get_object::GetObjectOutput;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client;
-use chrono::{DateTime, Datelike, Timelike, Utc};
+use chrono::{DateTime, Utc};
 use lambda_runtime::{tracing, LambdaEvent};
 use parquet::arrow::ArrowWriter;
 use serde_json::{json, Value};
@@ -36,12 +36,12 @@ pub(crate) async fn function_handler(event: LambdaEvent<SqsEvent>) -> Result<(),
         let key: (String, String) = get_namespace_and_table(event);
         let enriched_event: Value =
             maybe_pull_s3_data(parsed_event, &client, extended_bucket_name.to_owned()).await;
-        event_map.entry(key).or_insert(vec![]).push(enriched_event)
+        event_map.entry(key).or_default().push(enriched_event)
     }
 
     for (key, value) in event_map.iter() {
         let insert_timestamp: DateTime<Utc> = Utc::now();
-        let s3_path: String = construct_s3_path(key, insert_timestamp);
+        let s3_path: String = construct_s3_path(key);
         write_to_s3(
             value.to_owned(),
             s3_path,
@@ -103,17 +103,9 @@ async fn download_object(client: &aws_sdk_s3::Client, bucket_name: &str, key: &s
     let data = stream.body.collect().await.unwrap();
     data.to_vec()
 }
-fn construct_s3_path(table_key: &(String, String), insert_timestamp: DateTime<Utc>) -> String {
-    format!(
-        "/raw/{}/{}/year={}/month={}/day={}/hour={}/minute={}/",
-        table_key.0,
-        table_key.1,
-        insert_timestamp.year(),
-        insert_timestamp.month(),
-        insert_timestamp.day(),
-        insert_timestamp.hour(),
-        insert_timestamp.minute()
-    )
+
+fn construct_s3_path(table_key: &(String, String)) -> String {
+    format!("/raw/{}/{}", table_key.0, table_key.1,)
 }
 
 async fn write_to_s3(
