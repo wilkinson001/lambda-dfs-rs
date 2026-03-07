@@ -82,5 +82,41 @@ fn get_namespace_and_table(event: &Value) -> (String, String) {
 fn get_event_routing_region(event: &Value) -> String {
     let kb4_principal: &str = event["metadata"]["kb4_principal"].as_str().unwrap();
     let parts: Vec<&str> = kb4_principal.split(":").collect();
-    String::from(parts[3])
+    String::from(parts[2])
+}
+
+#[cfg(test)]
+mod tests {
+    // Note this useful idiom: importing names from outer (for mod tests) scope.
+    use super::*;
+
+    #[test]
+    fn test_get_namespace_and_table() {
+        let test_event: Value = serde_json::from_str(
+            String::from(r#"{"detail-type": "test_namespace.test_table.foo_bar"}"#).as_str(),
+        )
+        .unwrap();
+        assert_eq!(
+            get_namespace_and_table(&test_event),
+            (
+                String::from("dfs_test_namespace"),
+                String::from("test_table")
+            )
+        )
+    }
+
+    #[test]
+    fn test_get_event_routing_region() {
+        let test_event: Value = serde_json::from_str(
+            String::from(
+                r#"{"metadata": {"kb4_principal": "krn:resource:us-east-1:identity/foo/bar"}}"#,
+            )
+            .as_str(),
+        )
+        .unwrap();
+        assert_eq!(
+            get_event_routing_region(&test_event),
+            String::from("us-east-1")
+        )
+    }
 }
