@@ -1,8 +1,8 @@
 use lambda_runtime::{run, service_fn, tracing, Error};
 
 mod event_handler;
+mod s3;
 use event_handler::function_handler;
-
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
