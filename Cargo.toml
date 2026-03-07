@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-aws-sdk-s3 = "1.106.0"
+aws-sdk-s3 = { version = "1.106.0", features = ["test-util"] }
 arrow = "56.1.0"
 aws-config = { version = "1.8.6", features = ["behavior-version-latest"] }
 arrow-schema = "56.1.0"
@@ -19,3 +19,6 @@ lambda_runtime = "0.13.0"
 parquet = "56.1.0"
 serde_json = "1.0.145"
 tokio = { version = "1", features = ["macros"] }
+
+[dev-dependencies]
+aws-smithy-mocks = "0.2.1"
