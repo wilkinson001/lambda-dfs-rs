@@ -14,7 +14,6 @@ use std::env;
 use std::sync::Arc;
 
 pub(crate) async fn function_handler(event: LambdaEvent<SqsEvent>) -> Result<(), Error> {
-    // Extract some useful information from the request
     let payload = event.payload;
     tracing::info!("Payload: {:?}", payload);
     let mut event_map: HashMap<String, HashMap<(String, String), Vec<Value>>> = HashMap::new();
@@ -25,7 +24,6 @@ pub(crate) async fn function_handler(event: LambdaEvent<SqsEvent>) -> Result<(),
         RegionProviderChain::default_provider().or_else("us-east-1");
     let config: SdkConfig = aws_config::from_env().region(region_provider).load().await;
     let client: Client = Client::new(&config);
-    // Define schema: "data" as Utf8, "insert_timestamp" as Timestamp(Nanosecond, Some("UTC"))
     let schema = Arc::new(Schema::new(vec![
         Field::new("data", DataType::Utf8, false),
         Field::new(
