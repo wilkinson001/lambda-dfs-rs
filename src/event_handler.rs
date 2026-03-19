@@ -88,8 +88,8 @@ fn get_event_routing_region(event: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aws_lambda_events::event::sqs::{SqsEvent, SqsMessage};
-    use serde_json::json;
+    
+    
 
     #[test]
     fn test_get_namespace_and_table() {
