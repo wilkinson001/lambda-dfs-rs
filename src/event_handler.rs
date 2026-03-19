@@ -88,6 +88,8 @@ fn get_event_routing_region(event: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aws_lambda_events::event::sqs::{SqsEvent, SqsMessage};
+    use serde_json::json;
 
     #[test]
     fn test_get_namespace_and_table() {
@@ -105,6 +107,20 @@ mod tests {
     }
 
     #[test]
+    fn test_get_namespace_and_table_edge_cases() {
+        // Test with namespace but no table (single part)
+        let test_event: Value = serde_json::from_str(
+            String::from(r#"{"detail-type": "test_namespace"}"#).as_str(),
+        )
+        .unwrap();
+        // This should panic on parts[1] - boundary condition
+        let result = std::panic::catch_unwind(|| {
+            get_namespace_and_table(&test_event)
+        });
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_get_event_routing_region() {
         let test_event: Value = serde_json::from_str(
             String::from(
@@ -117,5 +133,36 @@ mod tests {
             get_event_routing_region(&test_event),
             String::from("us-east-1")
         )
+    }
+
+    #[test]
+    fn test_get_event_routing_region_edge_cases() {
+        // Test with invalid kb4_principal format (not enough parts)
+        let test_event: Value = serde_json::from_str(
+            String::from(r#"{"metadata": {"kb4_principal": "krn:resource"}}"#).as_str(),
+        )
+        .unwrap();
+        let result = std::panic::catch_unwind(|| {
+            get_event_routing_region(&test_event)
+        });
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_construct_s3_path() {
+        let table_key = (String::from("dfs_namespace"), String::from("table_name"));
+        assert_eq!(
+            construct_s3_path(&table_key),
+            String::from("/raw/dfs/dfs_namespace/table_name")
+        );
+    }
+
+    #[test]
+    fn test_construct_s3_path_empty_table() {
+        let table_key = (String::from("dfs_namespace"), String::from(""));
+        assert_eq!(
+            construct_s3_path(&table_key),
+            String::from("/raw/dfs/dfs_namespace/")
+        );
     }
 }
