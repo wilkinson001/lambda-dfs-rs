@@ -1,4 +1,4 @@
-use lambda_runtime::{run, service_fn, tracing, Error};
+use lambda_runtime::{Error, run, service_fn, tracing};
 
 mod event_handler;
 mod s3;

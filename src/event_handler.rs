@@ -14,7 +14,6 @@ use std::env;
 use std::sync::Arc;
 
 pub(crate) async fn function_handler(event: LambdaEvent<SqsEvent>) -> Result<(), Error> {
-    // Extract some useful information from the request
     let payload = event.payload;
     tracing::info!("Payload: {:?}", payload);
     let mut event_map: HashMap<String, HashMap<(String, String), Vec<Value>>> = HashMap::new();
@@ -25,7 +24,6 @@ pub(crate) async fn function_handler(event: LambdaEvent<SqsEvent>) -> Result<(),
         RegionProviderChain::default_provider().or_else("us-east-1");
     let config: SdkConfig = aws_config::from_env().region(region_provider).load().await;
     let client: Client = Client::new(&config);
-    // Define schema: "data" as Utf8, "insert_timestamp" as Timestamp(Nanosecond, Some("UTC"))
     let schema = Arc::new(Schema::new(vec![
         Field::new("data", DataType::Utf8, false),
         Field::new(
@@ -88,7 +86,6 @@ fn get_event_routing_region(event: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn test_get_namespace_and_table() {
         let test_event: Value = serde_json::from_str(
@@ -105,6 +102,20 @@ mod tests {
     }
 
     #[test]
+    fn test_get_namespace_and_table_edge_cases() {
+        // Test with namespace but no table (single part)
+        let test_event: Value = serde_json::from_str(
+            String::from(r#"{"detail-type": "test_namespace"}"#).as_str(),
+        )
+        .unwrap();
+        // This should panic on parts[1] - boundary condition
+        let result = std::panic::catch_unwind(|| {
+            get_namespace_and_table(&test_event)
+        });
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_get_event_routing_region() {
         let test_event: Value = serde_json::from_str(
             String::from(
@@ -117,5 +128,36 @@ mod tests {
             get_event_routing_region(&test_event),
             String::from("us-east-1")
         )
+    }
+
+    #[test]
+    fn test_get_event_routing_region_edge_cases() {
+        // Test with invalid kb4_principal format (not enough parts)
+        let test_event: Value = serde_json::from_str(
+            String::from(r#"{"metadata": {"kb4_principal": "krn:resource"}}"#).as_str(),
+        )
+        .unwrap();
+        let result = std::panic::catch_unwind(|| {
+            get_event_routing_region(&test_event)
+        });
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_construct_s3_path() {
+        let table_key = (String::from("dfs_namespace"), String::from("table_name"));
+        assert_eq!(
+            construct_s3_path(&table_key),
+            String::from("/raw/dfs/dfs_namespace/table_name")
+        );
+    }
+
+    #[test]
+    fn test_construct_s3_path_empty_table() {
+        let table_key = (String::from("dfs_namespace"), String::from(""));
+        assert_eq!(
+            construct_s3_path(&table_key),
+            String::from("/raw/dfs/dfs_namespace/")
+        );
     }
 }
