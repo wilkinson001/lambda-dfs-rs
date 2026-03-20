@@ -1,11 +1,11 @@
 use arrow::array::{RecordBatch, StringArray, TimestampNanosecondArray};
 use arrow_schema::Schema;
 
+use aws_sdk_s3::Client;
 use aws_sdk_s3::operation::get_object::GetObjectOutput;
 use aws_sdk_s3::primitives::ByteStream;
-use aws_sdk_s3::Client;
 use parquet::arrow::ArrowWriter;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 pub async fn maybe_pull_s3_data(mut event: Value, client: &Client, bucket_name: String) -> Value {
