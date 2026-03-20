@@ -86,9 +86,6 @@ fn get_event_routing_region(event: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    
-
     #[test]
     fn test_get_namespace_and_table() {
         let test_event: Value = serde_json::from_str(
