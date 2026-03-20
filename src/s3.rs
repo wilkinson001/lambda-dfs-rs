@@ -92,6 +92,7 @@ pub async fn write_to_s3(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aws_smithy_mocks::{mock, mock_client};
 
     #[tokio::test]
     async fn test_maybe_pull_s3_data_no_s3_field() {
@@ -106,7 +107,12 @@ mod tests {
         let bucket_name = "test-bucket".to_string();
 
         // Should not call client when no s3 field
-        let result = maybe_pull_s3_data(event.clone(), &Client::new(&aws_config::from_env().load().await), bucket_name).await;
+        let result = maybe_pull_s3_data(
+            event.clone(),
+            &Client::new(&aws_config::from_env().load().await),
+            bucket_name,
+        )
+        .await;
 
         assert_eq!(result, event);
     }
@@ -125,9 +131,58 @@ mod tests {
 
         let bucket_name = "test-bucket".to_string();
 
-        let result = maybe_pull_s3_data(event.clone(), &Client::new(&aws_config::from_env().load().await), bucket_name).await;
+        let result = maybe_pull_s3_data(
+            event.clone(),
+            &Client::new(&aws_config::from_env().load().await),
+            bucket_name,
+        )
+        .await;
 
         assert_eq!(result, event);
+    }
+
+    #[tokio::test]
+    async fn test_maybe_pull_s3_data_pull_data() {
+        let event = json!({
+            "data": {
+                "detail": {
+                    "extended": {
+                        "s3": "some_value"
+                    }
+                }
+            }
+        });
+        let expected_result = json!({
+            "data": {
+                "detail": {
+                    "extended": {
+                        "s3": "some_value",
+                        "some_key": {
+                            "some_other_key": "some_value"
+                        }
+                    }
+                }
+            }
+        });
+        let extended_data = json!({
+            "some_key": {
+                "some_other_key": "some_value"
+        }
+        })
+        .to_string();
+
+        let get_object_rule = mock!(aws_sdk_s3::Client::get_object).then_output(move || {
+            GetObjectOutput::builder()
+                .body(ByteStream::from(extended_data.clone().into_bytes()))
+                .build()
+        });
+
+        // Create a mocked client with the rule
+        let client = mock_client!(aws_sdk_s3, [&get_object_rule]);
+
+        let result = maybe_pull_s3_data(event, &client, "test-bucket".to_string());
+
+        assert_eq!(result.await.as_str(), expected_result.as_str());
     }
 
     #[tokio::test]
@@ -155,7 +210,11 @@ mod tests {
     async fn test_write_to_s3_empty_data() {
         let schema = Arc::new(Schema::new(vec![
             arrow_schema::Field::new("data", arrow_schema::DataType::Utf8, true),
-            arrow_schema::Field::new("insert_timestamp", arrow_schema::DataType::Timestamp(arrow_schema::TimeUnit::Nanosecond, None), true),
+            arrow_schema::Field::new(
+                "insert_timestamp",
+                arrow_schema::DataType::Timestamp(arrow_schema::TimeUnit::Nanosecond, None),
+                true,
+            ),
         ]));
 
         let config = aws_config::from_env().load().await;
@@ -169,7 +228,8 @@ mod tests {
             "test-bucket",
             1234567890i64,
             &schema,
-        ).await;
+        )
+        .await;
 
         // Just verify it doesn't panic - actual S3 write is mocked
         let _ = result;
@@ -179,7 +239,11 @@ mod tests {
     async fn test_write_to_s3_single_record() {
         let schema = Arc::new(Schema::new(vec![
             arrow_schema::Field::new("data", arrow_schema::DataType::Utf8, true),
-            arrow_schema::Field::new("insert_timestamp", arrow_schema::DataType::Timestamp(arrow_schema::TimeUnit::Nanosecond, None), true),
+            arrow_schema::Field::new(
+                "insert_timestamp",
+                arrow_schema::DataType::Timestamp(arrow_schema::TimeUnit::Nanosecond, None),
+                true,
+            ),
         ]));
 
         let config = aws_config::from_env().load().await;
@@ -193,7 +257,8 @@ mod tests {
             "test-bucket",
             1234567890i64,
             &schema,
-        ).await;
+        )
+        .await;
 
         let _ = result;
     }
@@ -202,7 +267,11 @@ mod tests {
     async fn test_write_to_s3_multiple_records() {
         let schema = Arc::new(Schema::new(vec![
             arrow_schema::Field::new("data", arrow_schema::DataType::Utf8, true),
-            arrow_schema::Field::new("insert_timestamp", arrow_schema::DataType::Timestamp(arrow_schema::TimeUnit::Nanosecond, None), true),
+            arrow_schema::Field::new(
+                "insert_timestamp",
+                arrow_schema::DataType::Timestamp(arrow_schema::TimeUnit::Nanosecond, None),
+                true,
+            ),
         ]));
 
         let config = aws_config::from_env().load().await;
@@ -221,7 +290,8 @@ mod tests {
             "test-bucket",
             1234567890i64,
             &schema,
-        ).await;
+        )
+        .await;
 
         let _ = result;
     }
