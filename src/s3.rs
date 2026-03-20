@@ -14,21 +14,20 @@ pub async fn maybe_pull_s3_data(mut event: Value, client: &Client, bucket_name: 
         let key = s3_path.as_str().unwrap();
         let s3_data: Vec<u8> = download_object(client, bucket_name.as_str(), key).await;
         //Merge S3 data with event
-        if let Some(extended_map) = event
+        let extended_map = event
             .get_mut("data")
             .and_then(|d| d.get_mut("detail"))
             .and_then(|d| d.get_mut("extended"))
             .and_then(|x| x.as_object_mut())
-        {
-            let additions: Value =
-                serde_json::from_str(std::str::from_utf8(&s3_data).unwrap()).unwrap();
-            if let Some(add_obj) = additions.as_object() {
-                for (k, v) in add_obj {
-                    if k == "s3" {
-                        continue;
-                    } // preserve existing s3
-                    extended_map.insert(k.clone(), v.clone()); // clone from additions
-                }
+            .unwrap();
+        let additions: Value =
+            serde_json::from_str(std::str::from_utf8(&s3_data).unwrap()).unwrap();
+        if let Some(add_obj) = additions.as_object() {
+            for (k, v) in add_obj {
+                if k == "s3" {
+                    continue;
+                } // preserve existing s3
+                extended_map.insert(k.clone(), v.clone()); // clone from additions
             }
         }
     }
@@ -164,25 +163,54 @@ mod tests {
                 }
             }
         });
-        let extended_data = json!({
-            "some_key": {
-                "some_other_key": "some_value"
-        }
-        })
-        .to_string();
 
         let get_object_rule = mock!(aws_sdk_s3::Client::get_object).then_output(move || {
             GetObjectOutput::builder()
-                .body(ByteStream::from(extended_data.clone().into_bytes()))
+                .body(ByteStream::from(
+                    json!({
+                        "some_key": {
+                            "some_other_key": "some_value"
+                        },
+                        "s3": "some_different_bucket"
+                    })
+                    .to_string()
+                    .into_bytes(),
+                ))
                 .build()
         });
 
         // Create a mocked client with the rule
         let client = mock_client!(aws_sdk_s3, [&get_object_rule]);
 
-        let result = maybe_pull_s3_data(event, &client, "test-bucket".to_string());
+        let result = maybe_pull_s3_data(event, &client, "test-bucket".to_string()).await;
 
-        assert_eq!(result.await.as_str(), expected_result.as_str());
+        assert_eq!(result, expected_result);
+    }
+
+    #[tokio::test]
+    async fn test_maybe_pull_s3_data_pull_empty_data() {
+        let event = json!({
+            "data": {
+                "detail": {
+                    "extended": {
+                        "s3": "some_value"
+                    }
+                }
+            }
+        });
+
+        let get_object_rule = mock!(aws_sdk_s3::Client::get_object).then_output(move || {
+            GetObjectOutput::builder()
+                .body(ByteStream::from(json!("").to_string().into_bytes()))
+                .build()
+        });
+
+        // Create a mocked client with the rule
+        let client = mock_client!(aws_sdk_s3, [&get_object_rule]);
+
+        let result = maybe_pull_s3_data(event.clone(), &client, "test-bucket".to_string()).await;
+
+        assert_eq!(result, event);
     }
 
     #[tokio::test]
